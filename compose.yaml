@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bioaccess
+      POSTGRES_PASSWORD: local_demo_only
+      POSTGRES_DB: bioaccess
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bioaccess"]
+      interval: 3s
+      retries: 20
+  app:
+    build: .
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      DATABASE_URL: postgres://bioaccess:local_demo_only@db:5432/bioaccess
+      APP_ORIGIN: http://localhost:3000
+      NODE_ENV: development
+      ALLOW_DEV_SEED: "true"
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in .env before starting}
+    depends_on:
+      db: { condition: service_healthy }
+    command: sh -c "npm run migrate && npm run seed && npm start"
+volumes:
+  postgres_data:
