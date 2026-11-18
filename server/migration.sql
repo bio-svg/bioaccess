@@ -1,0 +1,17 @@
+CREATE TABLE users(id text PRIMARY KEY, email text UNIQUE NOT NULL, name text NOT NULL, password_hash text NOT NULL, role text NOT NULL CHECK(role IN ('researcher','reviewer','admin')), active boolean NOT NULL DEFAULT true);
+CREATE TABLE projects(id text PRIMARY KEY, name text NOT NULL, description text NOT NULL DEFAULT '');
+CREATE TABLE memberships(user_id text REFERENCES users(id),project_id text REFERENCES projects(id),active boolean NOT NULL DEFAULT true,PRIMARY KEY(user_id,project_id));
+CREATE TABLE datasets(id text PRIMARY KEY,name text NOT NULL,description text NOT NULL,classification text NOT NULL DEFAULT 'FICTIONAL', created_at timestamptz DEFAULT now());
+CREATE TABLE project_datasets(project_id text REFERENCES projects(id),dataset_id text REFERENCES datasets(id),PRIMARY KEY(project_id,dataset_id));
+CREATE TABLE records(id text PRIMARY KEY,dataset_id text REFERENCES datasets(id),site text NOT NULL,value double precision NOT NULL,unit text NOT NULL,note text NOT NULL);
+CREATE TABLE access_requests(id text PRIMARY KEY,user_id text REFERENCES users(id),project_id text REFERENCES projects(id),dataset_id text REFERENCES datasets(id),operations jsonb NOT NULL,reason text NOT NULL,status text NOT NULL CHECK(status IN ('pending','approved','rejected')),reviewer_id text REFERENCES users(id),created_at timestamptz DEFAULT now());
+CREATE TABLE grants(id text PRIMARY KEY,user_id text REFERENCES users(id),project_id text REFERENCES projects(id),dataset_id text REFERENCES datasets(id),operations jsonb NOT NULL,expires_at timestamptz NOT NULL,revoked_at timestamptz,UNIQUE(user_id,project_id,dataset_id));
+CREATE TABLE export_approvals(id text PRIMARY KEY,user_id text REFERENCES users(id),project_id text REFERENCES projects(id),dataset_id text REFERENCES datasets(id),params jsonb NOT NULL,params_hash text NOT NULL,status text NOT NULL CHECK(status IN ('pending','approved','rejected')),expires_at timestamptz,consumed_at timestamptz,reviewer_id text REFERENCES users(id),created_at timestamptz DEFAULT now());
+CREATE TABLE sessions(token_hash text PRIMARY KEY,user_id text REFERENCES users(id),csrf text NOT NULL,expires_at timestamptz NOT NULL);
+CREATE TABLE assistant_sessions(id text PRIMARY KEY,user_id text REFERENCES users(id),project_id text REFERENCES projects(id),provider text NOT NULL DEFAULT 'simulation',messages integer NOT NULL DEFAULT 0,created_at timestamptz DEFAULT now());
+CREATE TABLE assistant_operations(id text PRIMARY KEY,session_id text REFERENCES assistant_sessions(id),tool text NOT NULL,outcome text NOT NULL,correlation_id text NOT NULL,created_at timestamptz DEFAULT now());
+CREATE TABLE audit_events(id text PRIMARY KEY,created_at timestamptz NOT NULL DEFAULT now(),actor_id text,assistant_session_id text,project_id text,dataset_id text,action text NOT NULL,outcome text NOT NULL,reason text NOT NULL,correlation_id text NOT NULL);
+CREATE INDEX audit_lookup ON audit_events(project_id,created_at DESC);
+CREATE FUNCTION reject_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Audit events are append-only'; END; $$;
+CREATE TRIGGER audit_append_only BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_audit_mutation();
+CREATE TABLE evaluation_runs(id text PRIMARY KEY,created_at timestamptz DEFAULT now(),mode text NOT NULL,report jsonb NOT NULL);
